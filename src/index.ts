@@ -32,12 +32,12 @@ class BedrockMCPServer {
   private bedrockClient: BedrockRuntimeClient;
 
   constructor() {
-    log('🚀 Initializing Bedrock MCP Server');
+    log('🚀 Initializing Bedrock MCP Server with Latest Claude Models');
     
     this.server = new Server(
       {
         name: 'bedrock-server',
-        version: '0.1.0',
+        version: '0.2.0',
       },
       {
         capabilities: {
@@ -56,7 +56,7 @@ class BedrockMCPServer {
   }
 
   private setupHandlers() {
-    log('🔧 Setting up MCP request handlers');
+    log('🔧 Setting up MCP request handlers with latest Claude models');
     
     // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -66,7 +66,7 @@ class BedrockMCPServer {
         tools: [
           {
             name: 'invoke_claude',
-            description: 'Invoke Claude 3.5 Sonnet model on AWS Bedrock',
+            description: 'Invoke the latest Claude models (4.1, 4.0, 3.7) on AWS Bedrock',
             inputSchema: {
               type: 'object',
               properties: {
@@ -78,17 +78,37 @@ class BedrockMCPServer {
                   type: 'string',
                   description: 'The Claude model to use',
                   enum: [
-                    'us.anthropic.claude-opus-4-20250514-v1:0',      // Claude 4 Opus (primary)
-                    'us.anthropic.claude-3-5-sonnet-20240620-v1:0',  // Claude 3.5 Sonnet (fallback)
-                    'us.anthropic.claude-3-5-haiku-20241022-v1:0',   // Claude 3.5 Haiku (fast)
-                    'us.anthropic.claude-3-opus-20240229-v1:0'       // Claude 3 Opus
+                    'anthropic.claude-opus-4-1-20250805-v1:0',      // 🥇 Claude Opus 4.1 (NEWEST!)
+                    'anthropic.claude-sonnet-4-20250514-v1:0',      // 🥈 Claude Sonnet 4
+                    'anthropic.claude-opus-4-20250514-v1:0',        // 🥉 Claude Opus 4
+                    'anthropic.claude-3-7-sonnet-20250219-v1:0',    // Claude 3.7 Sonnet (newer than 3.5)
+                    'anthropic.claude-3-5-sonnet-20241022-v2:0',    // Claude 3.5 Sonnet v2
+                    'anthropic.claude-3-5-sonnet-20240620-v1:0',    // Claude 3.5 Sonnet v1
+                    'anthropic.claude-3-5-haiku-20241022-v1:0',     // Claude 3.5 Haiku (fastest)
+                    'anthropic.claude-3-haiku-20240307-v1:0'        // Claude 3 Haiku (budget)
                   ],
-                  default: 'us.anthropic.claude-sonnet-4-20250514-v1:0'  // Default to Claude 4
+                  default: 'anthropic.claude-opus-4-1-20250805-v1:0'  // Default to newest Claude 4.1!
                 },
                 max_tokens: {
                   type: 'number',
                   description: 'Maximum tokens to generate',
-                  default: 4096
+                  default: 4096,
+                  minimum: 1,
+                  maximum: 8192
+                },
+                temperature: {
+                  type: 'number',
+                  description: 'Sampling temperature (0.0 to 1.0)',
+                  default: 0.7,
+                  minimum: 0.0,
+                  maximum: 1.0
+                },
+                top_p: {
+                  type: 'number', 
+                  description: 'Top-p sampling (0.0 to 1.0)',
+                  default: 0.9,
+                  minimum: 0.0,
+                  maximum: 1.0
                 }
               },
               required: ['prompt'],
@@ -97,13 +117,16 @@ class BedrockMCPServer {
         ],
       };
       
-      log('✅ Returning tools to Copilot', { toolCount: tools.tools.length });
+      log('✅ Returning latest Claude model tools to Copilot', { 
+        toolCount: tools.tools.length,
+        defaultModel: 'Claude Opus 4.1 (Aug 2025)'
+      });
       return tools;
     });
 
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      log('🚀 COPILOT USING BEDROCK! Received CallTool request', {
+      log('🚀 COPILOT USING LATEST CLAUDE! Received CallTool request', {
         toolName: request.params.name,
         promptLength: (request.params.arguments as any)?.prompt?.length || 0
       });
@@ -112,21 +135,45 @@ class BedrockMCPServer {
 
       if (name === 'invoke_claude') {
         try {
-          const { prompt, model = 'us.anthropic.claude-sonnet-4-20250514-v1:0', max_tokens = 4096 } = args as {
+          const { 
+            prompt, 
+            model = 'anthropic.claude-opus-4-1-20250805-v1:0',  // Default to Claude 4.1
+            max_tokens = 4096,
+            temperature = 0.7,
+            top_p = 0.9
+          } = args as {
             prompt: string;
             model?: string;
             max_tokens?: number;
+            temperature?: number;
+            top_p?: number;
           };
 
-          log('🤖 Calling Claude 4.0 Sonnet via AWS Bedrock', {
+          // Get model name for logging
+          const modelNames: Record<string, string> = {
+            'anthropic.claude-opus-4-1-20250805-v1:0': '🥇 Claude Opus 4.1 (Aug 2025)',
+            'anthropic.claude-sonnet-4-20250514-v1:0': '🥈 Claude Sonnet 4.0',
+            'anthropic.claude-opus-4-20250514-v1:0': '🥉 Claude Opus 4.0', 
+            'anthropic.claude-3-7-sonnet-20250219-v1:0': '🆕 Claude 3.7 Sonnet',
+            'anthropic.claude-3-5-sonnet-20241022-v2:0': 'Claude 3.5 Sonnet v2',
+            'anthropic.claude-3-5-sonnet-20240620-v1:0': 'Claude 3.5 Sonnet v1',
+            'anthropic.claude-3-5-haiku-20241022-v1:0': '⚡ Claude 3.5 Haiku',
+            'anthropic.claude-3-haiku-20240307-v1:0': '💰 Claude 3 Haiku'
+          };
+
+          log(`🤖 Calling ${modelNames[model] || model} via AWS Bedrock`, {
             model,
             max_tokens,
-            promptPreview: prompt.substring(0, 100) + '...'
+            temperature,
+            top_p,
+            promptPreview: prompt.substring(0, 150) + '...'
           });
 
           const body = JSON.stringify({
             anthropic_version: "bedrock-2023-05-31",
             max_tokens: max_tokens,
+            temperature: temperature,
+            top_p: top_p,
             messages: [
               {
                 role: "user",
@@ -142,13 +189,19 @@ class BedrockMCPServer {
             accept: 'application/json',
           });
 
+          const startTime = Date.now();
           const response = await this.bedrockClient.send(command);
+          const responseTime = Date.now() - startTime;
+          
           const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
-          log('✅ SUCCESS! Claude responded via Bedrock', {
+          log(`✅ SUCCESS! ${modelNames[model] || model} responded`, {
+            responseTime: `${responseTime}ms`,
             responseLength: responseBody.content[0].text.length,
             usage: responseBody.usage,
-            preview: responseBody.content[0].text.substring(0, 100) + '...'
+            inputTokens: responseBody.usage?.input_tokens,
+            outputTokens: responseBody.usage?.output_tokens,
+            preview: responseBody.content[0].text.substring(0, 200) + '...'
           });
 
           return {
@@ -159,16 +212,29 @@ class BedrockMCPServer {
               },
             ],
           };
-        } catch (error) {
+        } catch (error: any) {
           log('❌ ERROR invoking Claude', {
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
+            errorCode: error?.name,
+            statusCode: error?.$metadata?.httpStatusCode
           });
+
+          // Provide helpful error messages
+          let errorMessage = `Error invoking Claude: ${error instanceof Error ? error.message : String(error)}`;
+          
+          if (error?.name === 'ValidationException') {
+            errorMessage += '\n\n💡 Tip: This model might require INFERENCE_PROFILE access. Try using a different model or check your AWS Bedrock permissions.';
+          } else if (error?.name === 'AccessDeniedException') {
+            errorMessage += '\n\n💡 Tip: You may need to request access to this model in the AWS Bedrock console.';
+          } else if (error?.$metadata?.httpStatusCode === 429) {
+            errorMessage += '\n\n💡 Tip: Rate limit exceeded. Try again in a moment or use a different model.';
+          }
           
           return {
             content: [
               {
                 type: 'text',
-                text: `Error invoking Claude: ${error instanceof Error ? error.message : String(error)}`,
+                text: errorMessage,
               },
             ],
             isError: true,
@@ -180,15 +246,15 @@ class BedrockMCPServer {
       throw new Error(`Unknown tool: ${name}`);
     });
     
-    log('✅ MCP handlers ready - waiting for Copilot connections');
+    log('✅ MCP handlers ready - waiting for Copilot connections with latest Claude models');
   }
 
   async run() {
-    log('🎯 Starting Bedrock MCP server - ready for Copilot!');
+    log('🎯 Starting Bedrock MCP server with Claude 4.1 Opus - ready for Copilot!');
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    log('🟢 MCP server running and connected!');
-    console.error('Bedrock MCP server running on stdio');
+    log('🟢 MCP server running and connected with latest Claude models!');
+    console.error('Bedrock MCP server running on stdio with Claude 4.1 Opus as default');
   }
 }
 
