@@ -1,7 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 
@@ -32,12 +32,12 @@ class BedrockMCPServer {
   private bedrockClient: BedrockRuntimeClient;
 
   constructor() {
-    log('🚀 Initializing Bedrock MCP Server with Latest Claude Models');
+    log('🚀 Initializing Bedrock MCP Server with Converse API for Claude 4');
     
     this.server = new Server(
       {
         name: 'bedrock-server',
-        version: '0.2.0',
+        version: '0.3.0',
       },
       {
         capabilities: {
@@ -51,22 +51,22 @@ class BedrockMCPServer {
       region: process.env.AWS_REGION || 'us-east-1',
     });
 
-    log(`✅ Initialized Bedrock client for region: ${process.env.AWS_REGION || 'us-east-1'}`);
+    log(`✅ Initialized Bedrock client with Converse API for region: ${process.env.AWS_REGION || 'us-east-1'}`);
     this.setupHandlers();
   }
 
   private setupHandlers() {
-    log('🔧 Setting up MCP request handlers with latest Claude models');
+    log('🔧 Setting up MCP request handlers with Converse API');
     
     // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      log('📋 COPILOT CONNECTED! Received ListTools request');
+      log('📋 COPILOT CONNECTED! Using Converse API for Claude 4');
       
       const tools = {
         tools: [
           {
             name: 'invoke_claude',
-            description: 'Invoke the latest Claude models (4.1, 4.0, 3.7) on AWS Bedrock',
+            description: 'Invoke Claude models using AWS Bedrock Converse API (supports Claude 4!)',
             inputSchema: {
               type: 'object',
               properties: {
@@ -78,16 +78,18 @@ class BedrockMCPServer {
                   type: 'string',
                   description: 'The Claude model to use',
                   enum: [
+                    // Claude 4 models (using Converse API)
                     'anthropic.claude-opus-4-1-20250805-v1:0',      // 🥇 Claude Opus 4.1 (NEWEST!)
                     'anthropic.claude-sonnet-4-20250514-v1:0',      // 🥈 Claude Sonnet 4
                     'anthropic.claude-opus-4-20250514-v1:0',        // 🥉 Claude Opus 4
-                    'anthropic.claude-3-7-sonnet-20250219-v1:0',    // Claude 3.7 Sonnet (newer than 3.5)
+                    'anthropic.claude-3-7-sonnet-20250219-v1:0',    // Claude 3.7 Sonnet
+                    // Claude 3.5 models (work with both APIs)
                     'anthropic.claude-3-5-sonnet-20241022-v2:0',    // Claude 3.5 Sonnet v2
                     'anthropic.claude-3-5-sonnet-20240620-v1:0',    // Claude 3.5 Sonnet v1
-                    'anthropic.claude-3-5-haiku-20241022-v1:0',     // Claude 3.5 Haiku (fastest)
-                    'anthropic.claude-3-haiku-20240307-v1:0'        // Claude 3 Haiku (budget)
+                    'anthropic.claude-3-5-haiku-20241022-v1:0',     // Claude 3.5 Haiku
+                    'anthropic.claude-3-haiku-20240307-v1:0'        // Claude 3 Haiku
                   ],
-                  default: 'anthropic.claude-opus-4-1-20250805-v1:0'  // Default to newest Claude 4.1!
+                  default: 'anthropic.claude-opus-4-1-20250805-v1:0'
                 },
                 max_tokens: {
                   type: 'number',
@@ -117,8 +119,9 @@ class BedrockMCPServer {
         ],
       };
       
-      log('✅ Returning latest Claude model tools to Copilot', { 
+      log('✅ Returning Converse API tools to Copilot', { 
         toolCount: tools.tools.length,
+        api: 'Converse API',
         defaultModel: 'Claude Opus 4.1 (Aug 2025)'
       });
       return tools;
@@ -126,7 +129,7 @@ class BedrockMCPServer {
 
     // Handle tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      log('🚀 COPILOT USING LATEST CLAUDE! Received CallTool request', {
+      log('🚀 COPILOT USING CONVERSE API! Received CallTool request', {
         toolName: request.params.name,
         promptLength: (request.params.arguments as any)?.prompt?.length || 0
       });
@@ -137,7 +140,7 @@ class BedrockMCPServer {
         try {
           const { 
             prompt, 
-            model = 'anthropic.claude-opus-4-1-20250805-v1:0',  // Default to Claude 4.1
+            model = 'anthropic.claude-opus-4-1-20250805-v1:0',
             max_tokens = 4096,
             temperature = 0.7,
             top_p = 0.9
@@ -149,7 +152,7 @@ class BedrockMCPServer {
             top_p?: number;
           };
 
-          // Get model name for logging
+          // Model names for logging
           const modelNames: Record<string, string> = {
             'anthropic.claude-opus-4-1-20250805-v1:0': '🥇 Claude Opus 4.1 (Aug 2025)',
             'anthropic.claude-sonnet-4-20250514-v1:0': '🥈 Claude Sonnet 4.0',
@@ -161,7 +164,7 @@ class BedrockMCPServer {
             'anthropic.claude-3-haiku-20240307-v1:0': '💰 Claude 3 Haiku'
           };
 
-          log(`🤖 Calling ${modelNames[model] || model} via AWS Bedrock`, {
+          log(`🤖 Calling ${modelNames[model] || model} via Converse API`, {
             model,
             max_tokens,
             temperature,
@@ -169,65 +172,70 @@ class BedrockMCPServer {
             promptPreview: prompt.substring(0, 150) + '...'
           });
 
-          const body = JSON.stringify({
-            anthropic_version: "bedrock-2023-05-31",
-            max_tokens: max_tokens,
-            temperature: temperature,
-            top_p: top_p,
+          // Use Converse API instead of InvokeModel
+          const command = new ConverseCommand({
+            modelId: model,
             messages: [
               {
                 role: "user",
-                content: prompt
+                content: [
+                  {
+                    text: prompt
+                  }
+                ]
               }
-            ]
-          });
-
-          const command = new InvokeModelCommand({
-            modelId: model,
-            body: body,
-            contentType: 'application/json',
-            accept: 'application/json',
+            ],
+            inferenceConfig: {
+              maxTokens: max_tokens,
+              temperature: temperature,
+              topP: top_p
+            }
           });
 
           const startTime = Date.now();
           const response = await this.bedrockClient.send(command);
           const responseTime = Date.now() - startTime;
-          
-          const responseBody = JSON.parse(new TextDecoder().decode(response.body));
 
-          log(`✅ SUCCESS! ${modelNames[model] || model} responded`, {
+          // Extract response text from Converse API format
+          const responseText = response.output?.message?.content?.[0]?.text || 'No response received';
+
+          log(`✅ SUCCESS! ${modelNames[model] || model} responded via Converse API`, {
             responseTime: `${responseTime}ms`,
-            responseLength: responseBody.content[0].text.length,
-            usage: responseBody.usage,
-            inputTokens: responseBody.usage?.input_tokens,
-            outputTokens: responseBody.usage?.output_tokens,
-            preview: responseBody.content[0].text.substring(0, 200) + '...'
+            responseLength: responseText.length,
+            usage: response.usage,
+            inputTokens: response.usage?.inputTokens,
+            outputTokens: response.usage?.outputTokens,
+            totalTokens: response.usage?.totalTokens,
+            preview: responseText.substring(0, 200) + '...'
           });
 
           return {
             content: [
               {
                 type: 'text',
-                text: responseBody.content[0].text,
+                text: responseText,
               },
             ],
           };
         } catch (error: any) {
-          log('❌ ERROR invoking Claude', {
+          log('❌ ERROR with Converse API', {
             error: error instanceof Error ? error.message : String(error),
             errorCode: error?.name,
-            statusCode: error?.$metadata?.httpStatusCode
+            statusCode: error?.$metadata?.httpStatusCode,
+            requestId: error?.$metadata?.requestId
           });
 
-          // Provide helpful error messages
-          let errorMessage = `Error invoking Claude: ${error instanceof Error ? error.message : String(error)}`;
+          // Enhanced error handling for Converse API
+          let errorMessage = `Error with Converse API: ${error instanceof Error ? error.message : String(error)}`;
           
           if (error?.name === 'ValidationException') {
-            errorMessage += '\n\n💡 Tip: This model might require INFERENCE_PROFILE access. Try using a different model or check your AWS Bedrock permissions.';
+            errorMessage += '\n\n💡 Tip: Check if the model ID is correct and supports Converse API.';
           } else if (error?.name === 'AccessDeniedException') {
             errorMessage += '\n\n💡 Tip: You may need to request access to this model in the AWS Bedrock console.';
+          } else if (error?.name === 'ResourceNotFoundException') {
+            errorMessage += '\n\n💡 Tip: This model might not be available in your region. Try a different model.';
           } else if (error?.$metadata?.httpStatusCode === 429) {
-            errorMessage += '\n\n💡 Tip: Rate limit exceeded. Try again in a moment or use a different model.';
+            errorMessage += '\n\n💡 Tip: Rate limit exceeded. Try again in a moment.';
           }
           
           return {
@@ -246,15 +254,15 @@ class BedrockMCPServer {
       throw new Error(`Unknown tool: ${name}`);
     });
     
-    log('✅ MCP handlers ready - waiting for Copilot connections with latest Claude models');
+    log('✅ MCP handlers ready with Converse API - supports Claude 4!');
   }
 
   async run() {
-    log('🎯 Starting Bedrock MCP server with Claude 4.1 Opus - ready for Copilot!');
+    log('🎯 Starting Bedrock MCP server with Converse API for Claude 4 support');
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    log('🟢 MCP server running and connected with latest Claude models!');
-    console.error('Bedrock MCP server running on stdio with Claude 4.1 Opus as default');
+    log('🟢 MCP server running with Converse API - Claude 4 ready!');
+    console.error('Bedrock MCP server running with Converse API for Claude 4 support');
   }
 }
 
